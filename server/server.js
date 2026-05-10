@@ -58,8 +58,7 @@ app.use("/api/dashboard", dashboardRoutes);
 app.use("/api/currency", currencyRoutes);
 app.use("/api/contact", contactRoutes);
 
-// app.listen(PORT, () => {
-//   console.log(`✅ Server running on port ${PORT}`);
-// });
+app.listen(PORT, () => {
+  console.log(`✅ Server running on port ${PORT}`);
+});
 
-export default app; 

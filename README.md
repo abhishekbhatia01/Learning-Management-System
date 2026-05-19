@@ -65,11 +65,11 @@ It enables **instructors** to create and manage courses, **students** to explore
 
 ### DevOps & Deployment
 
-* **Frontend Hosting:** Netlify / Render
-* **Backend Hosting:** Render / Railway / AWS
+* **Containerization:** Docker
+* **Container Orchestration:** Docker Compose
+* **Cloud Hosting:** AWS EC2
 * **Database:** MongoDB Atlas
 * **Environment Management:** `.env` configuration
-
 ---
 
 ## 📋 Prerequisites

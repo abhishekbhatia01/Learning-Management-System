@@ -24,15 +24,18 @@ const PORT = process.env.PORT || 5000;
 app.post(
   "/api/payment/webhook",
   express.raw({ type: "application/json" }),
-  handleStripeWebhook
+  handleStripeWebhook,
 );
 
 app.use(
   cors({
-    origin: process.env.CLIENT_URL || "http://localhost:5173",
+    origin: [
+      process.env.CLIENT_URL,
+      "http://localhost:5173"
+    ],
     methods: ["POST", "GET", "PUT", "DELETE", "PATCH", "OPTIONS"],
     credentials: true,
-  })
+  }),
 );
 app.use(cookieParser());
 app.use(express.json({ limit: "50mb" }));
@@ -43,7 +46,7 @@ app.use(globalRateLimiter);
 app.get("/health", (req, res) => {
   return res.status(200).json({
     success: true,
-    message: "Server is healthy"
+    message: "Server is healthy",
   });
 });
 
@@ -61,4 +64,3 @@ app.use("/api/contact", contactRoutes);
 app.listen(PORT, () => {
   console.log(`✅ Server running on port ${PORT}`);
 });
-

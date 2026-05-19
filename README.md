@@ -1,36 +1,45 @@
 # 🎓 Learnify – Online Learning Platform
 
-**Learnify** is a comprehensive, full-stack **online learning management system (LMS)** built with modern web technologies.
-It enables **instructors** to create and manage courses, **students** to explore and enroll in expert-led content, and **administrators** to oversee platform operations.
+Learnify is a full-stack Learning Management System (LMS) that allows students to explore and enroll in courses, instructors to create and manage educational content, and administrators to control the platform efficiently.
+
+Built using modern full-stack technologies with Docker-based deployment support.
 
 ---
 
 ## 🚀 Features
 
-### 👩‍🎓 For Students
+### 👩‍🎓 Student Features
 
-* **Browse & Explore** – Discover courses across multiple categories
-* **Secure Enrollment** – Seamless checkout with Stripe integration
-* **Video Learning** – High-quality video streaming with adaptive playback
-* **Reviews & Ratings** – Read and submit course reviews
-* **Cart Management** – Add courses to cart and checkout securely
-* **Personal Dashboard** – View enrolled courses and personal details
----
-
-### 👨‍🏫 For Instructors
-
-* **Course Management** – Create, edit, and publish courses
-* **Lecture Management** – Upload and organize video lectures
-* **Analytics Dashboard** – Track enrollments, revenue, and ratings
+- Browse and search courses
+- Filter courses by category
+- Add courses to cart
+- Secure checkout with Stripe
+- Enroll in courses
+- Watch video lectures
+- Submit ratings and reviews
+- View enrolled courses
+- Manage profile
 
 ---
 
-### 🛠️ For Administrators
+### 👨‍🏫 Instructor Features
 
-* **User Management** – Manage users, roles, and permissions
-* **Platform Analytics** – View system-wide usage and revenue metrics
-* **Course Moderation** – Oversee all published courses
-* **System Controls** – Manage platform configurations
+- Create and publish courses
+- Upload thumbnails and videos
+- Add and manage lectures
+- Edit course details
+- View enrollments
+- Access analytics dashboard
+
+---
+
+### 🛠️ Admin Features
+
+- Manage users
+- Manage courses
+- Role-based access control
+- Platform moderation
+- View analytics
 
 ---
 
@@ -38,230 +47,399 @@ It enables **instructors** to create and manage courses, **students** to explore
 
 ### Frontend
 
-* **Framework:** React 18 + Vite
-* **Styling:** Tailwind CSS
-* **State Management:** Zustand
-* **Data Fetching:** TanStack React Query
-* **Routing:** React Router v6
-* **Animations:** Framer Motion
-* **Video Player:** Video.js
-* **UI Icons:** Lucide React
-* **Notifications:** React Hot Toast
-
----
+- React.js
+- Vite
+- Tailwind CSS
+- Zustand
+- React Router DOM
+- TanStack React Query
+- Framer Motion
+- Video.js
+- Lucide React
+- React Hot Toast
 
 ### Backend
 
-* **Runtime:** Node.js
-* **Framework:** Express.js
-* **Database:** MongoDB + Mongoose
-* **Authentication:** JWT + HTTP-only Cookies
-* **File Storage:** ImageKit
-* **Payments:** Stripe
-* **Email Service:** Nodemailer / SendGrid
-* **Security:** Rate limiting, role-based access control (RBAC)
+- Node.js
+- Express.js
+- MongoDB
+- Mongoose
+- JWT Authentication
+- HTTP-only Cookies
+- Nodemailer
+- Stripe
+- ImageKit
+
+### DevOps / Deployment
+
+- Docker
+- Docker Compose
+- Nginx
+- AWS EC2
+- MongoDB Atlas
 
 ---
 
-### DevOps & Deployment
+## 📂 Project Structure
 
-* **Containerization:** Docker
-* **Container Orchestration:** Docker Compose
-* **Cloud Hosting:** AWS EC2
-* **Database:** MongoDB Atlas
-* **Environment Management:** `.env` configuration
+```bash
+Learnify/
+│
+├── client/
+│   ├── src/
+│   ├── Dockerfile
+│   └── .env
+│
+├── server/
+│   ├── controllers/
+│   ├── routes/
+│   ├── models/
+│   ├── Dockerfile
+│   └── .env
+│
+├── docker-compose.yml
+└── README.md
+```
+
 ---
 
 ## 📋 Prerequisites
 
-* Node.js 14+
-* MongoDB Atlas (or local MongoDB)
-* Stripe account
-* ImageKit account
-* Email service credentials (SendGrid / SMTP)
+Make sure you have installed:
+
+- Node.js
+- Docker
+- Docker Compose
+- MongoDB Atlas account
+- Stripe account
+- ImageKit account
+- SMTP credentials
 
 ---
 
-## 🚀 Getting Started
+## ⚙️ Environment Variables
 
-### Installation
+### Backend (`server/.env`)
 
-1. Clone the repository
-2. Setup Backend
-3. Setup Frontend
-
-Frontend runs at:
-
+```env
+PORT=5000
+MONGO_URI=your_mongodb_connection
+JWT_SECRET=your_secret_key
+STRIPE_SECRET_KEY=your_stripe_secret
+IMAGEKIT_PUBLIC_KEY=your_public_key
+IMAGEKIT_PRIVATE_KEY=your_private_key
+IMAGEKIT_URL_ENDPOINT=your_imagekit_url
+SMTP_EMAIL=your_email
+SMTP_PASSWORD=your_password
+CLIENT_URL=http://localhost:3000
 ```
-http://localhost:5173
+
+### Frontend (`client/.env`)
+
+```env
+VITE_API_URL=http://localhost:5000/api
+VITE_IMAGEKIT_URL_ENDPOINT=your_imagekit_url
+VITE_IMAGEKIT_PUBLIC_KEY=your_public_key
 ```
 
 ---
 
-## 📚 API Documentation
+## 🐳 Docker Setup
 
-### 🔐 Authentication
+### docker-compose.yml
 
-* `POST /api/auth/register` – Register user
-* `POST /api/auth/login` – Login
-* `POST /api/auth/logout` – Logout
-* `POST /api/auth/refresh` – Refresh token
-* `POST /api/auth/forgot-password` – Send reset email
-* `POST /api/auth/reset-password` – Reset password
+```yaml
+services:
+  backend:
+    build: ./server
+    container_name: server
+    ports:
+      - "5000:5000"
+    env_file:
+      - ./server/.env
+    restart: always
 
----
-
-### 📘 Courses
-
-* `GET /api/courses` – Get all courses (pagination)
-* `GET /api/courses/:id` – Course details
-* `POST /api/courses` – Create course (Instructor/Admin)
-* `PUT /api/courses/:id` – Update course
-* `DELETE /api/courses/:id` – Delete course
-* `GET /api/courses/:id/lectures` – Course lectures
-
----
-
-### 🎥 Lectures
-
-* `POST /api/lectures` – Create lecture
-* `PUT /api/lectures/:id` – Update lecture
-* `DELETE /api/lectures/:id` – Delete lecture
+  frontend:
+    build: ./client
+    container_name: client
+    ports:
+      - "3000:3000"
+    env_file:
+      - ./client/.env
+    depends_on:
+      - backend
+    restart: always
+```
 
 ---
 
-### 🛒 Cart & Payments
+## 🚀 Run with Docker
 
-* `GET /api/cart` – Get cart
-* `POST /api/cart/add` – Add course to cart
-* `DELETE /api/cart/remove/:courseId` – Remove from cart
-* `POST /api/payment/checkout` – Create Stripe checkout session
-* `POST /api/payment/webhook` – Handle Stripe webhooks
+### Build and Start Containers
 
----
+```bash
+docker compose up --build
+```
 
-### 👤 Users
+### Stop Containers
 
-* `GET /api/users/profile` – Get profile
-* `PUT /api/users/profile` – Update profile
-* `GET /api/users/enrollments` – Get enrolled courses
+```bash
+docker compose down
+```
 
 ---
 
-### ⭐ Reviews
+## 🌐 Application URLs
 
-* `POST /api/reviews` – Add review
-* `GET /api/reviews/course/:courseId` – Get reviews
-* `DELETE /api/reviews/:reviewId` – Delete review
+Frontend:
+
+```bash
+http://localhost:3000
+```
+
+Backend:
+
+```bash
+http://localhost:5000
+```
+
+---
+
+## 🚀 Run Without Docker
+
+### Clone Repository
+
+```bash
+git clone https://github.com/abhishekbhatia01/Learning-Management-System.git
+cd learnify
+```
+
+### Start Backend
+
+```bash
+cd server
+npm install
+npm run dev
+```
+
+### Start Frontend
+
+```bash
+cd client
+npm install
+npm run dev
+```
+
+---
+
+## 📚 API Endpoints
+
+### Authentication
+
+```http
+POST /api/auth/register
+POST /api/auth/login
+POST /api/auth/logout
+POST /api/auth/refresh
+POST /api/auth/forgot-password
+POST /api/auth/reset-password
+```
+
+### Courses
+
+```http
+GET /api/course
+GET /api/course/:id
+POST /api/course
+PUT /api/course/:id
+DELETE /api/course/:id
+```
+
+### Lectures
+
+```http
+POST /api/lecture
+PUT /api/lecture/:id
+DELETE /api/lecture/:id
+```
+
+### Cart
+
+```http
+GET /api/cart
+POST /api/cart/add
+DELETE /api/cart/remove/:id
+```
+
+### Payments
+
+```http
+POST /api/payment/checkout
+POST /api/payment/webhook
+```
+
+### Users
+
+```http
+GET /api/user/profile
+PUT /api/user/profile
+```
+
+### Reviews
+
+```http
+POST /api/review
+GET /api/review/:courseId
+DELETE /api/review/:id
+```
 
 ---
 
 ## 🔐 Authentication & Authorization
 
-* JWT-based authentication
-* Role-based access control (RBAC)
+Security implementation includes:
 
-### User Roles
+- JWT Authentication
+- Refresh Tokens
+- HTTP-only Cookies
+- Role-based access control
 
-* **Student** – Enroll, learn, review
-* **Instructor** – Create courses, view analytics
-* **Admin** – Full platform access
+### Roles
 
-Route protection is enforced via **Express middleware** and **React route guards**.
+- Student
+- Instructor
+- Admin
 
 ---
 
 ## 💳 Payment Integration
 
-* Stripe Checkout
-* Secure payment flow
-* Webhook-based payment confirmation
-* Automatic enrollment after successful payment
-* Refund-ready design
+Stripe payment features:
+
+- Secure checkout
+- Payment verification
+- Webhook support
+- Automatic course enrollment
 
 ---
 
-## 📧 Email System
+## 🎥 Media Management
+
+ImageKit integration for:
+
+- Course thumbnails
+- Video hosting
+- CDN delivery
+- Media optimization
+
+---
+
+## 📧 Email Features
 
 Automated emails for:
 
-* User registration (welcome emails)
-* Password reset
-* Enrollment confirmation
+- Welcome messages
+- Password reset
+- Enrollment confirmation
 
-### ⚠️ Known Issue
+Using:
 
-> **Nodemailer SMTP requests are blocked on Render free instances**, causing **connection timeout errors**.
-> This is a hosting-level restriction.
-> **Solution:** Use a third-party email service (SendGrid, Mailgun, Resend) or a paid Render plan with outbound SMTP enabled.
-
----
-
-## 🎥 Video Management
-
-* ImageKit-powered video hosting
-* Adaptive bitrate streaming
-* CDN distribution
-* Automatic thumbnail generation
+- Nodemailer
+- SMTP provider
 
 ---
 
-## 📊 Analytics & Reporting
+## 🌐 Deployment Architecture
 
-### Student
+Production deployment setup:
 
-* Courses enrolled
-* Learning activity
+```text
+User
+   ↓
+Nginx Reverse Proxy
+   ├── Frontend Container (React App)
+   └── Backend Container (Node API)
+            ↓
+      MongoDB Atlas
+```
 
-### Instructor
+Deployable on:
 
-* Enrollments per course
-* Revenue tracking
-* Engagement metrics
+- AWS EC2
+- Render
+- Railway
+- Netlify (frontend only)
 
-### Admin
+---
 
-* Platform-wide analytics
-* Revenue reports
-* System health insights
+## 🐛 Common Issues
+
+### CORS Error
+
+Backend CORS config:
+
+```js
+app.use(cors({
+  origin: process.env.CLIENT_URL,
+  credentials: true
+}));
+```
+
+---
+
+### Docker Port Conflict
+
+Stop existing containers:
+
+```bash
+docker compose down
+```
+
+Restart:
+
+```bash
+docker compose up --build
+```
+
+---
+
+### ImageKit 400 Error
+
+Store valid uploaded image URL:
+
+```js
+thumbnail: uploadResponse.url
+```
 
 ---
 
 ## 🧪 Testing
 
-* API testing with Postman
-* Manual integration testing for payments & auth
+Testing methods:
 
----
-
-## 🌐 Deployment
-
-### Frontend
-
-* Netlify / Render (SPA routing enabled)
-
-### Backend
-
-* Render / Railway / AWS
-
----
-
-## 🐛 Troubleshooting
-
-Common issues:
-
-* MongoDB connection errors
-* ImageKit upload failures
-* SMTP timeout on Render (see Email System section)
+- Postman API testing
+- Manual UI testing
+- Payment flow testing
+- Authentication testing
 
 ---
 
 ## 🤝 Contributing
 
-1. Fork the repository
-2. Create a feature branch
+1. Fork repository
+2. Create new branch
 3. Commit changes
-4. Push and open a PR
+4. Push changes
+5. Open Pull Request
+
+---
+
+## 👥 Authors
+
+- Abhishek Bhatia
+- Akshit Mittal
+- Amjad Mishal
+- Aditya
 
 ---
 
@@ -271,16 +449,7 @@ MIT License
 
 ---
 
-## 👥 Authors
+## ❤️ Acknowledgements
 
-* **Abhishek Bhatia** – Founder
-* **Akshit Mittal** – Founder
-* **Amjad Mishal** – Founder
-* **Aditya** – Founder
-
----
-
-## ❤️ Acknowledgments
-
-Inspired by modern e-learning platforms
-Built with ❤️ for the learning community
+Built with ❤️ using modern full-stack and DevOps technologies.
+Inspired by modern online learning platforms.

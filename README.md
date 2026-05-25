@@ -437,10 +437,8 @@ Testing methods:
 ## 👥 Authors
 
 - Abhishek Bhatia
-- Akshit Mittal
-- Amjad Mishal
-- Aditya
-
+- Satyam Singhal
+  
 ---
 
 ## 📄 License

@@ -1,20 +1,20 @@
-services:
-  backend:
-    build: ./server
-    container_name: server
-    ports:
-      - "5000:5000"
-    env_file:
-      - ./server/.env
-    restart: always
+  services:
+    backend:
+      build: ./server
+      container_name: server
+      ports:
+        - "5000:5000"
+      env_file:
+        - ./server/.env
+      restart: always
 
-  frontend:
-    build: ./client
-    container_name: client
-    ports:
-      - "3000:3000"
-    env_file:
-      - ./client/.env
-    depends_on:
-      - backend
-    restart: always
+    frontend:
+      build: ./client
+      container_name: client
+      ports:
+        - "3000:3000"
+      env_file:
+        - ./client/.env
+      depends_on:
+        - backend
+      restart: always`

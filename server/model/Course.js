@@ -1,45 +1,62 @@
-import mongoose from "mongoose";
+import { DataTypes } from "sequelize";
+import { sequelize } from "../config/database.js";
 
-const courseSchema = mongoose.Schema(
+const Course = sequelize.define(
+  "Course",
   {
-    title: {
-      type: String,
-      required: true,
+    id: {
+      type: DataTypes.INTEGER,
+      primaryKey: true,
+      autoIncrement: true,
     },
-    instructor: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
+    _id: {
+      type: DataTypes.VIRTUAL,
+      get() {
+        return this.id;
+      },
+    },
+    title: {
+      type: DataTypes.STRING,
+      allowNull: false,
     },
     description: {
-      type: String,
-      required: true,
+      type: DataTypes.TEXT,
+      allowNull: false,
     },
     category: {
-      type: String,
-      required: true,
+      type: DataTypes.STRING,
+      allowNull: false,
     },
     price: {
-      type: Number,
-      required: true,
-      min: 0,
+      type: DataTypes.DECIMAL(10, 2),
+      allowNull: false,
+      validate: {
+        min: 0,
+      },
     },
     thumbnail: {
-      type: String,
-      default:
+      type: DataTypes.STRING,
+      defaultValue:
         "https://newsroundtheclock.com/wp-content/uploads/2023/10/online-course-blog-header.jpg",
     },
     numberOfReviews: {
-      type: Number,
-      default: 0,
+      type: DataTypes.INTEGER,
+      defaultValue: 0,
     },
     rating: {
-      type: Number,
-      default: 0,
+      type: DataTypes.FLOAT,
+      defaultValue: 0,
     },
   },
-  { timestamps: true }
+  {
+    timestamps: true,
+    indexes: [
+      {
+        unique: true,
+        fields: ["title", "instructorId"],
+      },
+    ],
+  }
 );
 
-courseSchema.index({ title: 1, instructor: 1 }, { unique: true });
-
-export default mongoose.model("Course", courseSchema);
+export default Course;

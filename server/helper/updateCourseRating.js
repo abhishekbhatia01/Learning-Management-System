@@ -1,29 +1,28 @@
-import mongoose from "mongoose";
-
+import { fn, col } from "sequelize";
 import Review from "../model/Review.js";
 import Course from "../model/Course.js";
 
 export const updateCourseRating = async (courseId) => {
-  const stats = await Review.aggregate([
-    { $match: { course: new mongoose.Types.ObjectId(String(courseId)) } },
-    {
-      $group: {
-        _id: "$course",
-        avgRating: { $avg: "$rating" },
-        count: { $sum: 1 },
-      },
-    },
-  ]);
+  try {
+    const stats = await Review.findOne({
+      where: { courseId },
+      attributes: [
+        [fn("AVG", col("rating")), "avgRating"],
+        [fn("COUNT", col("id")), "count"],
+      ],
+      raw: true,
+    });
 
-  if (stats.length > 0) {
-    await Course.findByIdAndUpdate(courseId, {
-      rating: stats[0].avgRating,
-      numberOfReviews: stats[0].count,
-    });
-  } else {
-    await Course.findByIdAndUpdate(courseId, {
-      rating: 0,
-      numberOfReviews: 0,
-    });
+    const count = stats && stats.count ? parseInt(stats.count, 10) : 0;
+    const avgRating = stats && stats.avgRating ? parseFloat(stats.avgRating) : 0;
+
+    const course = await Course.findByPk(courseId);
+    if (course) {
+      course.rating = Math.round(avgRating * 100) / 100; // Round to 2 decimal places
+      course.numberOfReviews = count;
+      await course.save();
+    }
+  } catch (error) {
+    console.error("Error updating course rating:", error);
   }
 };

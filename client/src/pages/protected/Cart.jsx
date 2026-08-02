@@ -5,7 +5,7 @@ import {
   CreditCard,
   Package,
 } from "lucide-react";
-import React from "react";
+import React, { useState } from "react";
 import { motion } from "motion/react";
 import { Link } from "react-router-dom";
 import { useCart } from "../../hooks/queries/useCart";
@@ -17,34 +17,46 @@ import { useRemoveFromCart } from "../../hooks/mutation/useRemoveFromCart";
 const Cart = () => {
   const { data, isLoading } = useCart();
   const removeMutation = useRemoveFromCart();
+  const [isPaying, setIsPaying] = useState(false);
 
   if (isLoading) return <Loadin />;
 
   const cartItems = data?.cart?.items || [];
-  const validItems = cartItems.filter((c) => c && c.course && c.course._id);
+  const validItems = cartItems.filter((c) => c && c.course && (c.course.id || c.course._id));
   const totalAmount =
     validItems.reduce((sum, item) => sum + (item.course?.price || 0), 0) ||
     data?.totalAmount ||
     0;
 
   const makePayment = async () => {
-    try {
-      if (cartItems.length === 0) {
-        toast.error("Your cart is empty");
-        return;
-      }
+    if (isPaying) return;
+    console.log("[Cart] validItems:", validItems);
 
-      const response = await createCheckoutSessionApi(cartItems);
+    if (validItems.length === 0) {
+      toast.error("Your cart is empty");
+      return;
+    }
+
+    try {
+      setIsPaying(true);
+      const response = await createCheckoutSessionApi();
+      console.log("[Cart] checkout response:", response);
 
       if (!response?.success || !response?.url) {
-        toast.error("Failed to create payment session");
+        toast.error(response?.message || "Failed to create payment session");
         return;
       }
 
       window.location.href = response.url;
     } catch (err) {
       console.error("Payment error:", err);
-      toast.error("Payment failed. Please try again.");
+      const msg =
+        err?.response?.data?.message ||
+        err?.message ||
+        "Payment failed. Please try again.";
+      toast.error(msg);
+    } finally {
+      setIsPaying(false);
     }
   };
 
@@ -129,7 +141,7 @@ const Cart = () => {
                 <div className="space-y-4">
                   {validItems.map((c, index) => (
                     <motion.div
-                      key={c.course?._id || index}
+                      key={c.course?.id || c.course?._id || index}
                       initial={{ opacity: 0, y: 20 }}
                       animate={{ opacity: 1, y: 0 }}
                       transition={{ delay: index * 0.1, duration: 0.5 }}
@@ -170,13 +182,13 @@ const Cart = () => {
                                   whileTap={{ scale: 0.95 }}
                                   onClick={() =>
                                     removeMutation.mutate({
-                                      courseId: c.course?._id,
+                                      courseId: c.course?.id || c.course?._id,
                                     })
                                   }
                                   disabled={
                                     removeMutation.isLoading &&
                                     removeMutation.variables?.courseId ===
-                                      c.course?._id
+                                      (c.course?.id || c.course?._id)
                                   }
                                   className="bg-red-500 w-10 h-10 flex items-center justify-center rounded-lg hover:bg-red-600 text-white transition-all disabled:opacity-60 shadow-md"
                                 >
@@ -240,13 +252,26 @@ const Cart = () => {
                   </div>
 
                   <motion.button
-                    whileHover={{ scale: 1.02 }}
-                    whileTap={{ scale: 0.98 }}
+                    whileHover={!isPaying ? { scale: 1.02 } : {}}
+                    whileTap={!isPaying ? { scale: 0.98 } : {}}
                     onClick={makePayment}
-                    className="w-full bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white font-bold py-4 rounded-xl transition-all shadow-lg flex items-center justify-center gap-2"
+                    disabled={isPaying}
+                    className="w-full bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white font-bold py-4 rounded-xl transition-all shadow-lg flex items-center justify-center gap-2 disabled:opacity-70 disabled:cursor-not-allowed"
                   >
-                    <CreditCard className="w-5 h-5" />
-                    Proceed to Checkout
+                    {isPaying ? (
+                      <>
+                        <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
+                        </svg>
+                        Processing...
+                      </>
+                    ) : (
+                      <>
+                        <CreditCard className="w-5 h-5" />
+                        Proceed to Checkout
+                      </>
+                    )}
                   </motion.button>
 
                   <p className="text-xs text-gray-500 text-center mt-4">

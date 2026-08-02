@@ -62,8 +62,8 @@ Built using modern full-stack technologies with Docker-based deployment support.
 
 - Node.js
 - Express.js
-- MongoDB
-- Mongoose
+- MySQL
+- Sequelize
 - JWT Authentication
 - HTTP-only Cookies
 - Nodemailer
@@ -76,7 +76,7 @@ Built using modern full-stack technologies with Docker-based deployment support.
 - Docker Compose
 - Nginx
 - AWS EC2
-- MongoDB Atlas
+- MySQL Server / Managed MySQL
 
 ---
 
@@ -110,7 +110,7 @@ Make sure you have installed:
 - Node.js
 - Docker
 - Docker Compose
-- MongoDB Atlas account
+- MySQL server or managed MySQL instance
 - Stripe account
 - ImageKit account
 - SMTP credentials
@@ -123,7 +123,11 @@ Make sure you have installed:
 
 ```env
 PORT=5000
-MONGO_URI=your_mongodb_connection
+DB_HOST=localhost
+DB_USER=root
+DB_PASSWORD=your_mysql_password
+DB_NAME=learnify
+DB_PORT=3306
 JWT_SECRET=your_secret_key
 STRIPE_SECRET_KEY=your_stripe_secret
 IMAGEKIT_PUBLIC_KEY=your_public_key
@@ -360,7 +364,7 @@ Nginx Reverse Proxy
    ├── Frontend Container (React App)
    └── Backend Container (Node API)
             ↓
-      MongoDB Atlas
+  MySQL Database
 ```
 
 Deployable on:
@@ -379,10 +383,12 @@ Deployable on:
 Backend CORS config:
 
 ```js
-app.use(cors({
-  origin: process.env.CLIENT_URL,
-  credentials: true
-}));
+app.use(
+  cors({
+    origin: process.env.CLIENT_URL,
+    credentials: true,
+  }),
+);
 ```
 
 ---
@@ -408,7 +414,7 @@ docker compose up --build
 Store valid uploaded image URL:
 
 ```js
-thumbnail: uploadResponse.url
+thumbnail: uploadResponse.url;
 ```
 
 ---
@@ -438,7 +444,7 @@ Testing methods:
 
 - Abhishek Bhatia
 - Satyam Singhal
-  
+
 ---
 
 ## 📄 License

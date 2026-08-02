@@ -1,43 +1,60 @@
-import mongoose from "mongoose";
+import { DataTypes } from "sequelize";
+import { sequelize } from "../config/database.js";
 import bcrypt from "bcrypt";
 
-const userSchema = mongoose.Schema(
+const User = sequelize.define(
+  "User",
   {
+    id: {
+      type: DataTypes.INTEGER,
+      primaryKey: true,
+      autoIncrement: true,
+    },
+    _id: {
+      type: DataTypes.VIRTUAL,
+      get() {
+        return this.id;
+      },
+    },
     name: {
-      type: String,
-      required: true,
+      type: DataTypes.STRING,
+      allowNull: false,
     },
     email: {
-      type: String,
-      required: true,
+      type: DataTypes.STRING,
+      allowNull: false,
       unique: true,
+      validate: {
+        isEmail: true,
+      },
     },
     password: {
-      type: String,
-      required: true,
+      type: DataTypes.STRING,
+      allowNull: false,
     },
     role: {
-      type: String,
-      enum: ["student", "teacher", "admin"],
-      default: "student",
+      type: DataTypes.ENUM("student", "teacher", "admin"),
+      defaultValue: "student",
     },
-    resetToken: String,
-    resetExpiry: Date,
+    resetToken: {
+      type: DataTypes.STRING,
+      allowNull: true,
+    },
+    resetExpiry: {
+      type: DataTypes.DATE,
+      allowNull: true,
+    },
   },
-  { timestamps: true }
+  {
+    timestamps: true,
+    hooks: {
+      beforeSave: async (user) => {
+        if (user.changed("password")) {
+          user.password = await bcrypt.hash(user.password, 10);
+        }
+      },
+    },
+  }
 );
 
-userSchema.pre("save", async function (next) {
-  if (!this.isModified("password")) {
-    return next();
-  }
-  try {
-    const hashedPassword = await bcrypt.hash(this.password, 10);
-    this.password = hashedPassword;
-    next();
-  } catch (error) {
-    next(error);
-  }
-});
-
-export default mongoose.model("User", userSchema);
+export default User;

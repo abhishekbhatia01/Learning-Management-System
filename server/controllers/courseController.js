@@ -3,30 +3,35 @@ import { paginate } from "../utils/paginate.js";
 import { imagekit } from "../config/imagekit.js";
 import Lecture from "../model/Lecture.js";
 import Enrollment from "../model/Enrollment.js";
+import User from "../model/User.js";
+import { Op } from "sequelize";
 
 // GET - public
 export const getAllCourses = async (req, res) => {
   try {
     const { page, limit, category, search } = req.query;
-    const query = {};
+    let query = {};
 
     if (category && category.trim() !== "") {
       query.category = category.trim();
     }
 
     if (search && search.trim() !== "") {
-      const regex = new RegExp(search.trim(), "i");
-      query.$or = [
-        { title: { $regex: regex } },
-        { category: { $regex: regex } },
+      const searchPattern = `%${search.trim()}%`;
+      query[Op.or] = [
+        { title: { [Op.like]: searchPattern } },
+        { category: { [Op.like]: searchPattern } },
       ];
     }
 
     if (category && category.trim() !== "" && search && search.trim() !== "") {
-      const regex = new RegExp(search.trim(), "i");
+      const searchPattern = `%${search.trim()}%`;
       query = {
         category: category.trim(),
-        $or: [{ title: { $regex: regex } }, { category: { $regex: regex } }],
+        [Op.or]: [
+          { title: { [Op.like]: searchPattern } },
+          { category: { [Op.like]: searchPattern } },
+        ],
       };
     }
 
@@ -37,9 +42,14 @@ export const getAllCourses = async (req, res) => {
       select: "-description",
       populate: {
         path: "instructor",
-        select: "name", // Return only name/email instead of password etc.
+        select: "name", // Return only name instead of password etc.
       },
     });
+
+    // Make sure we serialize rows to JSON to include virtual fields
+    if (data.result) {
+      data.result = data.result.map((item) => item.toJSON());
+    }
 
     res.status(200).json({ success: true, ...data });
   } catch (error) {
@@ -55,9 +65,12 @@ export const getCourseById = async (req, res) => {
   try {
     const { id } = req.params;
 
-    const course = await Course.findById(id).populate({
-      path: "instructor",
-      select: "name",
+    const course = await Course.findByPk(id, {
+      include: {
+        model: User,
+        as: "instructor",
+        attributes: ["name"],
+      },
     });
 
     if (!course) {
@@ -66,7 +79,7 @@ export const getCourseById = async (req, res) => {
         .json({ success: false, message: "Course not found" });
     }
 
-    res.status(200).json({ success: true, course });
+    res.status(200).json({ success: true, course: course.toJSON() });
   } catch (error) {
     console.error("Course Error: ", error);
     res
@@ -76,10 +89,9 @@ export const getCourseById = async (req, res) => {
 };
 
 // POST - instructor
-
 export const createCourse = async (req, res) => {
   try {
-    const userId = req.user._id;
+    const userId = req.user.id;
     const { title, description, price, thumbnail, category } = req.body;
 
     if (!title || !description || !price || !category) {
@@ -89,8 +101,10 @@ export const createCourse = async (req, res) => {
     }
 
     const existing = await Course.findOne({
-      title: title.trim(),
-      instructor: userId,
+      where: {
+        title: title.trim(),
+        instructorId: userId,
+      },
     });
 
     if (existing) {
@@ -106,16 +120,16 @@ export const createCourse = async (req, res) => {
       price,
       thumbnail,
       category,
-      instructor: userId,
+      instructorId: userId,
     });
 
     res.status(201).json({
       success: true,
       message: "Course created successfully",
-      course: newCourse,
+      course: newCourse.toJSON(),
     });
   } catch (error) {
-    if (error.code === 11000) {
+    if (error.name === "SequelizeUniqueConstraintError") {
       return res.status(400).json({
         success: false,
         message: "You already created a course with this title",
@@ -128,10 +142,10 @@ export const createCourse = async (req, res) => {
   }
 };
 
-// PUT - instructor:
+// PUT - instructor
 export const updateCourse = async (req, res) => {
   try {
-    const userId = req.user._id;
+    const userId = req.user.id;
     const { id } = req.params;
     const { title, description, price, thumbnail, category } = req.body;
 
@@ -141,7 +155,9 @@ export const updateCourse = async (req, res) => {
         .json({ success: false, message: "At least one field is required" });
     }
 
-    const existing = await Course.findOne({ _id: id, instructor: userId });
+    const existing = await Course.findOne({
+      where: { id, instructorId: userId },
+    });
 
     if (!existing) {
       return res.status(404).json({
@@ -160,7 +176,7 @@ export const updateCourse = async (req, res) => {
     res.status(200).json({
       success: true,
       message: "Course updated successfully",
-      course: existing,
+      course: existing.toJSON(),
     });
   } catch (error) {
     console.error("Update Course Error : ", error);
@@ -171,14 +187,13 @@ export const updateCourse = async (req, res) => {
 };
 
 // DELETE - instructor/Admin
-
 export const deleteCourse = async (req, res) => {
   try {
-    const userId = req.user._id;
+    const userId = req.user.id;
     const userRole = req.user.role;
     const { id } = req.params;
 
-    const course = await Course.findById(id);
+    const course = await Course.findByPk(id);
 
     if (!course) {
       return res.status(404).json({
@@ -187,14 +202,14 @@ export const deleteCourse = async (req, res) => {
       });
     }
 
-    if (String(course.instructor) !== String(userId) && userRole !== "admin") {
+    if (course.instructorId !== userId && userRole !== "admin") {
       return res.status(403).json({
         success: false,
         message: "You are not authorized to delete this course",
       });
     }
 
-    const lectures = await Lecture.find({ course: id });
+    const lectures = await Lecture.findAll({ where: { courseId: id } });
 
     for (const lec of lectures) {
       try {
@@ -203,9 +218,9 @@ export const deleteCourse = async (req, res) => {
         console.error(`Failed to delete ${lec.fileId}`, error.message);
       }
     }
-    await Lecture.deleteMany({ course: id });
+    await Lecture.destroy({ where: { courseId: id } });
 
-    await course.deleteOne();
+    await course.destroy();
     res.status(200).json({
       success: true,
       message: "Course deleted successfully",
@@ -218,17 +233,20 @@ export const deleteCourse = async (req, res) => {
   }
 };
 
-// GET - instructor:
-
+// GET - instructor
 export const getInstructorCourses = async (req, res) => {
   try {
-    const userId = req.user._id;
+    const userId = req.user.id;
     const { page, limit } = req.query;
     const data = await paginate(
       Course,
-      { instructor: userId },
+      { instructorId: userId },
       { page, limit, sort: { createdAt: -1 } }
     );
+
+    if (data.result) {
+      data.result = data.result.map((item) => item.toJSON());
+    }
 
     res.status(200).json({ success: true, ...data });
   } catch (error) {
@@ -239,7 +257,7 @@ export const getInstructorCourses = async (req, res) => {
   }
 };
 
-// GET - instructor:
+// GET - instructor
 export const getSignature = async (req, res) => {
   try {
     const authParam = await imagekit.getAuthenticationParameters();
@@ -256,17 +274,19 @@ export const getSignature = async (req, res) => {
 export const verifyEnrollment = async (req, res) => {
   try {
     const { courseId } = req.params;
-    const userId = req.user._id;
+    const userId = req.user.id;
 
     // Check if user is enrolled
     const enrollment = await Enrollment.findOne({
-      user: userId,
-      course: courseId,
+      where: {
+        userId,
+        courseId,
+      },
     });
 
     // Check if user is the instructor of the course
-    const course = await Course.findById(courseId);
-    const isInstructor = course && String(course.instructor) === String(userId);
+    const course = await Course.findByPk(courseId);
+    const isInstructor = course && course.instructorId === userId;
 
     res.status(200).json({
       success: true,

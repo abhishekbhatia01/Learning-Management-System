@@ -10,7 +10,7 @@ export const createReview = async (req, res) => {
     const user = req.user;
     const { comment, rating } = req.body;
 
-    const course = await Course.findById(courseId);
+    const course = await Course.findByPk(courseId);
 
     if (!course) {
       return res
@@ -19,8 +19,10 @@ export const createReview = async (req, res) => {
     }
 
     const isEnrolledInCourse = await Enrollment.findOne({
-      course: courseId,
-      user: user._id,
+      where: {
+        courseId,
+        userId: user.id,
+      },
     });
 
     if (!isEnrolledInCourse) {
@@ -31,8 +33,10 @@ export const createReview = async (req, res) => {
     }
 
     const alreadyReviewed = await Review.findOne({
-      user: user._id,
-      course: courseId,
+      where: {
+        userId: user.id,
+        courseId,
+      },
     });
 
     if (alreadyReviewed) {
@@ -42,9 +46,9 @@ export const createReview = async (req, res) => {
       });
     }
 
-    const review = await Review.create({
-      user: user._id,
-      course: courseId,
+    await Review.create({
+      userId: user.id,
+      courseId,
       comment,
       rating,
     });
@@ -65,8 +69,8 @@ export const getAllReviews = async (req, res) => {
     const { courseId } = req.params;
     const { page, limit } = req.query;
 
-    const query = { course: courseId };
-    const course = await Course.findById(courseId);
+    const query = { courseId };
+    const course = await Course.findByPk(courseId);
     if (!course) {
       return res
         .status(404)
@@ -83,6 +87,10 @@ export const getAllReviews = async (req, res) => {
       },
     });
 
+    if (reviews.result) {
+      reviews.result = reviews.result.map((r) => r.toJSON());
+    }
+
     res.status(200).json({ success: true, ...reviews });
   } catch (error) {
     console.error(`Get All Review Error : ${error}`);
@@ -98,14 +106,14 @@ export const deleteReview = async (req, res) => {
     const { courseId, reviewId } = req.params;
     const user = req.user;
 
-    const course = await Course.findById(courseId);
+    const course = await Course.findByPk(courseId);
     if (!course) {
       return res
         .status(404)
         .json({ success: false, message: "Course not found" });
     }
 
-    const review = await Review.findById(reviewId);
+    const review = await Review.findByPk(reviewId);
     if (!review) {
       return res.status(404).json({
         success: false,
@@ -114,7 +122,7 @@ export const deleteReview = async (req, res) => {
     }
 
     const isAdmin = user.role === "admin";
-    const isOwner = review.user.toString() === user._id.toString();
+    const isOwner = review.userId === user.id;
 
     if (!isAdmin && !isOwner) {
       return res.status(403).json({
@@ -123,7 +131,7 @@ export const deleteReview = async (req, res) => {
       });
     }
 
-    await review.deleteOne();
+    await review.destroy();
 
     await updateCourseRating(courseId);
 
@@ -140,19 +148,23 @@ export const deleteReview = async (req, res) => {
 
 export const getMyReviews = async (req, res) => {
   try {
-    const userId = req.user._id;
+    const userId = req.user.id;
     const { page, limit } = req.query;
 
-    const query = { user: userId };
+    const query = { userId };
     const reviews = await paginate(Review, query, {
       page,
       limit,
       sort: { createdAt: -1 },
       populate: {
         path: "course",
-        select: "title thumbnail _id",
+        select: "title thumbnail id",
       },
     });
+
+    if (reviews.result) {
+      reviews.result = reviews.result.map((r) => r.toJSON());
+    }
 
     res.status(200).json({
       success: true,
@@ -173,7 +185,7 @@ export const updateReview = async (req, res) => {
     const user = req.user;
     const { comment, rating } = req.body;
 
-    const course = await Course.findById(courseId);
+    const course = await Course.findByPk(courseId);
     if (!course) {
       return res.status(404).json({
         success: false,
@@ -181,7 +193,7 @@ export const updateReview = async (req, res) => {
       });
     }
 
-    const review = await Review.findById(reviewId);
+    const review = await Review.findByPk(reviewId);
     if (!review) {
       return res.status(404).json({
         success: false,
@@ -189,7 +201,7 @@ export const updateReview = async (req, res) => {
       });
     }
 
-    if (review.user.toString() !== user._id.toString()) {
+    if (review.userId !== user.id) {
       return res.status(403).json({
         success: false,
         message: "You are not authorized to update this review",
@@ -206,7 +218,7 @@ export const updateReview = async (req, res) => {
     return res.status(200).json({
       success: true,
       message: "Review updated successfully",
-      review,
+      review: review.toJSON(),
     });
   } catch (error) {
     console.error(`Update Review Error: ${error}`);

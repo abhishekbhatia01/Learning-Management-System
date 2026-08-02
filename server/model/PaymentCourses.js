@@ -1,24 +1,18 @@
 import { DataTypes } from "sequelize";
 import { sequelize } from "../config/database.js";
 
-const Cart = sequelize.define(
-  "Cart",
+const PaymentCourses = sequelize.define(
+  "PaymentCourses",
   {
     id: {
       type: DataTypes.INTEGER,
       primaryKey: true,
       autoIncrement: true,
     },
-    _id: {
-      type: DataTypes.VIRTUAL,
-      get() {
-        return this.id;
-      },
-    },
   },
   {
-    timestamps: true,
+    timestamps: false,
   }
 );
 
-export default Cart;
+export default PaymentCourses;

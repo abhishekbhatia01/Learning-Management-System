@@ -1,8 +1,9 @@
-import express from "express";
 import Cart from "../model/Cart.js";
+import CartItem from "../model/CartItem.js";
 import Enrollment from "../model/Enrollment.js";
 import Payment from "../model/Payment.js";
 import Course from "../model/Course.js";
+import User from "../model/User.js";
 import stripe from "../config/stripe.js";
 import { paginate } from "../utils/paginate.js";
 
@@ -14,58 +15,137 @@ export const createCheckoutSession = async (req, res) => {
     const { user } = req;
 
     // Fetch cart with populated course + instructor
-    const cart = await Cart.findOne({ user: user._id }).populate({
-      path: "items.course",
-      select: "_id title price thumbnail instructor",
-      populate: {
-        path: "instructor",
-        select: "name",
-      },
+    const cart = await Cart.findOne({
+      where: { userId: user.id },
+      include: [
+        {
+          model: CartItem,
+          as: "items",
+          include: [
+            {
+              model: Course,
+              as: "course",
+              attributes: ["id", "title", "price", "thumbnail", "instructorId"],
+              include: [
+                {
+                  model: User,
+                  as: "instructor",
+                  attributes: ["name"],
+                },
+              ],
+            },
+          ],
+        },
+      ],
     });
 
-    if (!cart || cart.items.length === 0) {
+    if (!cart || !cart.items || cart.items.length === 0) {
       return res.status(400).json({
         success: false,
         message: "Cart is empty",
       });
     }
 
-    const lineItems = cart.items.map((item) => ({
-      price_data: {
-        currency: "inr",
-        product_data: {
-          name: item.course.title,
-          description: `Instructor: ${item.course.instructor?.name || "N/A"}`,
-          images: [item.course.thumbnail],
-        },
-        unit_amount: Math.round(item.course.price * 100),
-      },
-      quantity: 1,
-    }));
+    // Keep only items that can produce valid Stripe line items.
+    const validCartItems = cart.items.filter((item) => {
+      const amount = Number.parseFloat(item?.course?.price);
+      const courseId = item?.course?.id;
+      return (
+        item?.course &&
+        Number.isInteger(courseId) &&
+        typeof item.course.title === "string" &&
+        item.course.title.trim().length > 0 &&
+        Number.isFinite(amount) &&
+        amount > 0
+      );
+    });
 
-    const totalAmount = cart.items.reduce(
-      (sum, item) => sum + item.course.price,
+    // Clean up stale or invalid cart rows so user does not hit this repeatedly.
+    const invalidCartItemIds = cart.items
+      .filter((item) => !validCartItems.includes(item))
+      .map((item) => item.id)
+      .filter(Boolean);
+
+    if (invalidCartItemIds.length > 0) {
+      await CartItem.destroy({ where: { id: invalidCartItemIds } });
+    }
+
+    if (validCartItems.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "No payable courses found in cart. Please refresh cart and add courses again.",
+      });
+    }
+
+    const lineItems = validCartItems.map((item) => {
+      const productData = {
+        name: item.course.title,
+        description: `Instructor: ${item.course.instructor?.name || "N/A"}`,
+      };
+
+      // Stripe expects public absolute image URLs.
+      const thumbnail = item.course.thumbnail;
+      if (typeof thumbnail === "string" && /^https?:\/\//i.test(thumbnail)) {
+        productData.images = [thumbnail];
+      }
+
+      return {
+        price_data: {
+          currency: "inr",
+          product_data: productData,
+          unit_amount: Math.round(Number.parseFloat(item.course.price) * 100),
+        },
+        quantity: 1,
+      };
+    });
+
+    const totalAmount = validCartItems.reduce(
+      (sum, item) => sum + parseFloat(item.course.price),
       0,
     );
 
-    const frontendUrl = process.env.FRONTEND_URL || process.env.CLIENT_URL;
+    const frontendUrl = (
+      process.env.FRONTEND_URL ||
+      process.env.CLIENT_URL ||
+      req.headers.origin ||
+      "http://localhost:5173"
+    ).replace(/\/$/, "");
 
-    const session = await stripe.checkout.sessions.create({
+    if (!frontendUrl) {
+      return res.status(500).json({
+        success: false,
+        message: "Payment configuration missing frontend URL",
+      });
+    }
+
+    if (!process.env.STRIPE_SECRET_KEY) {
+      return res.status(500).json({
+        success: false,
+        message: "Payment configuration missing Stripe secret key",
+      });
+    }
+
+    const checkoutPayload = {
       mode: "payment",
       payment_method_types: ["card"],
       line_items: lineItems,
       success_url: `${frontendUrl}/payment-success?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${frontendUrl}/payment-failed`,
-      customer_email: user.email,
       metadata: {
-        userId: user._id.toString(),
-        courseIds: cart.items.map((i) => i.course._id.toString()).join(","),
+        userId: user.id.toString(),
+        courseIds: validCartItems.map((i) => i.course.id.toString()).join(","),
       },
-    });
+    };
+
+    if (typeof user.email === "string" && user.email.trim().length > 0) {
+      checkoutPayload.customer_email = user.email.trim();
+    }
+
+    const session = await stripe.checkout.sessions.create(checkoutPayload);
 
     const payment = await Payment.create({
-      user: user._id,
-      courses: cart.items.map((i) => i.course._id),
+      userId: user.id,
       amount: totalAmount,
       currency: "inr",
       stripeSessionId: session.id,
@@ -73,16 +153,21 @@ export const createCheckoutSession = async (req, res) => {
       stripeEventIds: [],
     });
 
+    // Set many-to-many courses
+    const courseIds = validCartItems.map((i) => i.course.id);
+    await payment.setCourses(courseIds);
+
     res.status(200).json({
       success: true,
       url: session.url,
-      paymentId: payment._id,
+      paymentId: payment.id,
     });
   } catch (error) {
-    console.error("Checkout session error:", error);
+    const stripeMessage = error?.raw?.message || error?.message;
+    console.error("Checkout session error:", stripeMessage);
     res.status(500).json({
       success: false,
-      message: "Server error",
+      message: stripeMessage || "Server error",
     });
   }
 };
@@ -137,44 +222,54 @@ async function handleCheckoutCompleted(event) {
   const session = event.data.object;
 
   const payment = await Payment.findOne({
-    stripeSessionId: session.id,
+    where: { stripeSessionId: session.id },
+    include: [{ model: Course, as: "courses" }],
   });
 
   if (!payment) return;
 
   // Idempotency check
-  if (payment.stripeEventIds?.includes(event.id)) return;
+  let currentEventIds = payment.stripeEventIds || [];
+  if (currentEventIds.includes(event.id)) return;
 
   if (payment.status === "completed") return;
 
   payment.status = "completed";
   payment.stripePaymentIntentId = session.payment_intent;
-  payment.stripeEventIds.push(event.id);
+
+  currentEventIds.push(event.id);
+  payment.stripeEventIds = currentEventIds;
+
   await payment.save();
 
-  for (const courseId of payment.courses) {
+  for (const course of payment.courses) {
     const exists = await Enrollment.findOne({
-      user: payment.user,
-      course: courseId,
+      where: {
+        userId: payment.userId,
+        courseId: course.id,
+      },
     });
 
     if (!exists) {
       await Enrollment.create({
-        user: payment.user,
-        course: courseId,
+        userId: payment.userId,
+        courseId: course.id,
         enrolledDate: new Date(),
       });
     }
   }
 
-  await Cart.findOneAndUpdate({ user: payment.user }, { items: [] });
+  const userCart = await Cart.findOne({ where: { userId: payment.userId } });
+  if (userCart) {
+    await CartItem.destroy({ where: { cartId: userCart.id } });
+  }
 
   console.log("Payment completed & enrollment successful");
 }
 
 async function handleSessionExpired(session) {
   const payment = await Payment.findOne({
-    stripeSessionId: session.id,
+    where: { stripeSessionId: session.id },
   });
 
   if (!payment || payment.status !== "pending") return;
@@ -186,7 +281,7 @@ async function handleSessionExpired(session) {
 
 async function handlePaymentFailed(intent) {
   const payment = await Payment.findOne({
-    stripePaymentIntentId: intent.id,
+    where: { stripePaymentIntentId: intent.id },
   });
 
   if (!payment) return;
@@ -213,9 +308,18 @@ export const getSessionDetails = async (req, res) => {
     }
 
     const payment = await Payment.findOne({
-      stripeSessionId: sessionId,
-      user: user._id,
-    }).populate("courses", "title thumbnail");
+      where: {
+        stripeSessionId: sessionId,
+        userId: user.id,
+      },
+      include: [
+        {
+          model: Course,
+          as: "courses",
+          attributes: ["id", "title", "thumbnail"],
+        },
+      ],
+    });
 
     if (!payment) {
       return res.status(404).json({
@@ -226,7 +330,7 @@ export const getSessionDetails = async (req, res) => {
 
     res.status(200).json({
       success: true,
-      payment,
+      payment: payment.toJSON(),
     });
   } catch (error) {
     console.error("Session details error:", error);
@@ -244,28 +348,41 @@ export const verifyAndEnroll = async (req, res) => {
     const { user } = req;
 
     if (!sessionId) {
-      return res.status(400).json({ success: false, message: "Session ID required" });
+      return res
+        .status(400)
+        .json({ success: false, message: "Session ID required" });
     }
 
     // Retrieve the session from Stripe to confirm payment
     const session = await stripe.checkout.sessions.retrieve(sessionId);
 
     if (session.payment_status !== "paid") {
-      return res.status(400).json({ success: false, message: "Payment not completed" });
+      return res
+        .status(400)
+        .json({ success: false, message: "Payment not completed" });
     }
 
     const payment = await Payment.findOne({
-      stripeSessionId: sessionId,
-      user: user._id,
+      where: {
+        stripeSessionId: sessionId,
+        userId: user.id,
+      },
+      include: [{ model: Course, as: "courses" }],
     });
 
     if (!payment) {
-      return res.status(404).json({ success: false, message: "Payment record not found" });
+      return res
+        .status(404)
+        .json({ success: false, message: "Payment record not found" });
     }
 
     // If already completed (webhook already handled it), just return success
     if (payment.status === "completed") {
-      return res.status(200).json({ success: true, message: "Already enrolled", payment });
+      return res.status(200).json({
+        success: true,
+        message: "Already enrolled",
+        payment: payment.toJSON(),
+      });
     }
 
     // Mark payment as completed
@@ -274,23 +391,32 @@ export const verifyAndEnroll = async (req, res) => {
     await payment.save();
 
     // Create enrollments for each course
-    for (const courseId of payment.courses) {
-      const exists = await Enrollment.findOne({ user: user._id, course: courseId });
+    for (const course of payment.courses) {
+      const exists = await Enrollment.findOne({
+        where: { userId: user.id, courseId: course.id },
+      });
       if (!exists) {
         await Enrollment.create({
-          user: user._id,
-          course: courseId,
+          userId: user.id,
+          courseId: course.id,
           enrolledDate: new Date(),
         });
       }
     }
 
     // Clear the cart
-    await Cart.findOneAndUpdate({ user: user._id }, { items: [] });
+    const userCart = await Cart.findOne({ where: { userId: user.id } });
+    if (userCart) {
+      await CartItem.destroy({ where: { cartId: userCart.id } });
+    }
 
-    console.log("✅ Frontend verify-and-enroll successful for user:", user._id);
+    console.log("✅ Frontend verify-and-enroll successful for user:", user.id);
 
-    res.status(200).json({ success: true, message: "Enrollment successful", payment });
+    res.status(200).json({
+      success: true,
+      message: "Enrollment successful",
+      payment: payment.toJSON(),
+    });
   } catch (error) {
     console.error("Verify and enroll error:", error);
     res.status(500).json({ success: false, message: "Server error" });
@@ -302,13 +428,21 @@ export const verifyAndEnroll = async (req, res) => {
 ====================================================== */
 export const getPaymentHistory = async (req, res) => {
   try {
-    const payments = await Payment.find({ user: req.user._id })
-      .populate("courses", "title thumbnail")
-      .sort({ createdAt: -1 });
+    const payments = await Payment.findAll({
+      where: { userId: req.user.id },
+      include: [
+        {
+          model: Course,
+          as: "courses",
+          attributes: ["id", "title", "thumbnail"],
+        },
+      ],
+      order: [["createdAt", "DESC"]],
+    });
 
     res.status(200).json({
       success: true,
-      payments,
+      payments: payments.map((p) => p.toJSON()),
     });
   } catch (error) {
     console.error("Payment history error:", error);
@@ -331,6 +465,10 @@ export const getAllPayments = async (req, res) => {
         { path: "courses", select: "title" },
       ],
     });
+
+    if (data.result) {
+      data.result = data.result.map((p) => p.toJSON());
+    }
 
     res.status(200).json({ success: true, ...data });
   } catch (error) {

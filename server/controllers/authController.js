@@ -2,6 +2,7 @@ import User from "../model/User.js";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcrypt";
 import crypto from "crypto";
+import { Op } from "sequelize";
 import { welcomeTemplate } from "../utils/emails/welcomeMail.js";
 import { generateToken } from "../utils/generateToken.js";
 import { sendEmail } from "../utils/sendEmail.js";
@@ -21,7 +22,7 @@ export const register = async (req, res) => {
   try {
     const { name, email, password, role } = req.body;
 
-    const existing = await User.findOne({ email });
+    const existing = await User.findOne({ where: { email } });
 
     if (existing)
       return res.status(400).json({ message: "User already exists" });
@@ -53,12 +54,12 @@ export const login = async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    const user = await User.findOne({ email });
+    const user = await User.findOne({ where: { email } });
 
     if (!user)
       return res
         .status(404)
-        .json({ message: "User not .Register and try again" });
+        .json({ message: "User not found. Register and try again" });
 
     const ok = await bcrypt.compare(password, user.password);
 
@@ -67,11 +68,13 @@ export const login = async (req, res) => {
     const { accessToken, refreshToken } = generateToken(user);
     setRefreshToken(res, refreshToken);
 
-    const safeUser = await User.findById(user._id).select("-password");
+    const safeUser = await User.findByPk(user.id, {
+      attributes: { exclude: ["password"] },
+    });
 
     res.status(200).json({
       accessToken,
-      message: "Login successfull",
+      message: "Login successful",
       user: safeUser,
       success: true,
     });
@@ -116,7 +119,9 @@ export const refresh = async (req, res) => {
           expiresIn: process.env.JWT_EXPIRES,
         }
       );
-      const user = await User.findById(decoded.id).select("-password");
+      const user = await User.findByPk(decoded.id, {
+        attributes: { exclude: ["password"] },
+      });
       if (!user) {
         return res
           .status(404)
@@ -133,7 +138,7 @@ export const requestReset = async (req, res) => {
   try {
     const { email } = req.body;
 
-    const user = await User.findOne({ email });
+    const user = await User.findOne({ where: { email } });
     if (!user)
       return res.status(404).json({
         message: "User not found",
@@ -143,7 +148,7 @@ export const requestReset = async (req, res) => {
 
     const token = crypto.randomBytes(32).toString("hex");
     user.resetToken = token;
-    user.resetExpiry = Date.now() + 15 * 60 * 1000;
+    user.resetExpiry = new Date(Date.now() + 15 * 60 * 1000);
     await user.save();
 
     const resetUrl = `${process.env.CLIENT_URL}/reset-password/${token}`;
@@ -169,16 +174,18 @@ export const resetPassword = async (req, res) => {
     const { newPassword } = req.body;
 
     const user = await User.findOne({
-      resetToken: token,
-      resetExpiry: { $gt: Date.now() },
+      where: {
+        resetToken: token,
+        resetExpiry: { [Op.gt]: new Date() },
+      },
     });
 
     if (!user)
       return res.status(400).json({ message: "Invalid or expired token" });
 
     user.password = newPassword;
-    user.resetToken = undefined;
-    user.resetExpiry = undefined;
+    user.resetToken = null;
+    user.resetExpiry = null;
     await user.save();
 
     res

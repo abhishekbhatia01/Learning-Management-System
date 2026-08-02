@@ -2,21 +2,22 @@ import Course from "../model/Course.js";
 import Enrollment from "../model/Enrollment.js";
 import User from "../model/User.js";
 import Review from "../model/Review.js";
-import mongoose from "mongoose";
+import { fn, col, Op } from "sequelize";
 
 // GET - Instructor analytics
 // Returns: { courseCount, totalEnrolled (unique students), avgRating, revenue }
 export const getInstructorAnalytics = async (req, res) => {
   try {
-    const instructorId = req.user && req.user._id;
+    const instructorId = req.user && req.user.id;
     if (!instructorId) {
       return res.status(401).json({ success: false, message: "Unauthorized" });
     }
 
     // Find courses for instructor
-    const courses = await Course.find({ instructor: instructorId }).select(
-      "_id price rating"
-    );
+    const courses = await Course.findAll({
+      where: { instructorId },
+      attributes: ["id", "price", "rating"],
+    });
 
     const courseCount = courses.length;
 
@@ -30,13 +31,14 @@ export const getInstructorAnalytics = async (req, res) => {
       });
     }
 
-    const courseIds = courses.map((c) => c._id);
+    const courseIds = courses.map((c) => c.id);
 
     // Total unique enrolled students across instructor's courses
-    const uniqueStudents = await Enrollment.distinct("user", {
-      course: { $in: courseIds },
+    const totalEnrolled = await Enrollment.count({
+      distinct: true,
+      col: "userId",
+      where: { courseId: { [Op.in]: courseIds } },
     });
-    const totalEnrolled = uniqueStudents.length;
 
     // Average rating across instructor's courses (use course.rating field)
     const ratings = courses.map((c) =>
@@ -48,22 +50,23 @@ export const getInstructorAnalytics = async (req, res) => {
         : 0;
 
     // Fake revenue: sum of (course.price * numberOfEnrollmentsForThatCourse)
-    // We'll aggregate enrollments by course and multiply by price
-    const enrollmentAgg = await Enrollment.aggregate([
-      { $match: { course: { $in: courseIds } } },
-      { $group: { _id: "$course", count: { $sum: 1 } } },
-    ]);
+    const enrollmentAgg = await Enrollment.findAll({
+      where: { courseId: { [Op.in]: courseIds } },
+      attributes: ["courseId", [fn("COUNT", col("id")), "count"]],
+      group: ["courseId"],
+      raw: true,
+    });
 
     // Map counts by course id string
     const countsByCourse = enrollmentAgg.reduce((acc, item) => {
-      acc[String(item._id)] = item.count;
+      acc[String(item.courseId)] = parseInt(item.count, 10);
       return acc;
     }, {});
 
     let revenue = 0;
     for (const course of courses) {
-      const cnt = countsByCourse[String(course._id)] || 0;
-      const price = typeof course.price === "number" ? course.price : 0;
+      const cnt = countsByCourse[String(course.id)] || 0;
+      const price = typeof course.price === "number" ? course.price : parseFloat(course.price || 0);
       revenue += price * cnt;
     }
 
@@ -90,35 +93,42 @@ export const getInstructorAnalytics = async (req, res) => {
 // Returns: { enrolledCount, reviewCount, recentEnrolledCourses }
 export const getStudentAnalytics = async (req, res) => {
   try {
-    const userId = req.user && req.user._id;
+    const userId = req.user && req.user.id;
     if (!userId) {
       return res.status(401).json({ success: false, message: "Unauthorized" });
     }
 
     // Total enrolled courses count
-    const enrolledCount = await Enrollment.countDocuments({ user: userId });
+    const enrolledCount = await Enrollment.count({ where: { userId } });
 
     // Total reviews by student
-    const reviewCount = await Review.countDocuments({ user: userId });
+    const reviewCount = await Review.count({ where: { userId } });
 
     // Suggestion implemented: include recent enrolled courses (last 5)
-    const recentEnrollments = await Enrollment.find({ user: userId })
-      .sort({ enrolledDate: -1 })
-      .limit(5)
-      .populate({
-        path: "course",
-        select: "_id title thumbnail instructor",
-        populate: { path: "instructor", select: "name" },
-      })
-      .lean();
+    const recentEnrollments = await Enrollment.findAll({
+      where: { userId },
+      sort: [["enrolledDate", "DESC"]],
+      limit: 5,
+      include: [
+        {
+          model: Course,
+          as: "course",
+          attributes: ["id", "title", "thumbnail", "instructorId"],
+          include: [{ model: User, as: "instructor", attributes: ["name"] }],
+        },
+      ],
+    });
 
-    const recentEnrolledCourses = recentEnrollments.map((e) => ({
-      courseId: e.course?._id,
-      title: e.course?.title,
-      thumbnail: e.course?.thumbnail,
-      instructor: e.course?.instructor?.name,
-      enrolledDate: e.enrolledDate,
-    }));
+    const recentEnrolledCourses = recentEnrollments.map((e) => {
+      const eJson = e.toJSON();
+      return {
+        courseId: eJson.course?.id,
+        title: eJson.course?.title,
+        thumbnail: eJson.course?.thumbnail,
+        instructor: eJson.course?.instructor?.name,
+        enrolledDate: eJson.enrolledDate,
+      };
+    });
 
     res.status(200).json({
       success: true,
@@ -138,24 +148,23 @@ export const getStudentAnalytics = async (req, res) => {
 // Returns: { totalUsers: { students, teachers, admins, total }, totalCourses, totalRevenue }
 export const getGlobalAnalytics = async (req, res) => {
   try {
-    // optional: ensure requester is authenticated
-    const requester = req.user && req.user._id;
+    const requester = req.user && req.user.id;
     if (!requester) {
       return res.status(401).json({ success: false, message: "Unauthorized" });
     }
 
     // Users counts
-    const studentsCount = await User.countDocuments({ role: "student" });
-    const teachersCount = await User.countDocuments({ role: "teacher" });
-    const adminsCount = await User.countDocuments({ role: "admin" });
+    const studentsCount = await User.count({ where: { role: "student" } });
+    const teachersCount = await User.count({ where: { role: "teacher" } });
+    const adminsCount = await User.count({ where: { role: "admin" } });
     const totalUsers = studentsCount + teachersCount + adminsCount;
 
     // Courses count
-    const totalCourses = await Course.countDocuments();
+    const totalCourses = await Course.count();
 
     // Revenue (fake): sum of (course.price * enrollments count)
-    const courses = await Course.find({}).select("_id price");
-    const courseIds = courses.map((c) => c._id);
+    const courses = await Course.findAll({ attributes: ["id", "price"] });
+    const courseIds = courses.map((c) => c.id);
 
     if (courseIds.length === 0) {
       return res.status(200).json({
@@ -171,20 +180,22 @@ export const getGlobalAnalytics = async (req, res) => {
       });
     }
 
-    const enrollmentAgg = await Enrollment.aggregate([
-      { $match: { course: { $in: courseIds } } },
-      { $group: { _id: "$course", count: { $sum: 1 } } },
-    ]);
+    const enrollmentAgg = await Enrollment.findAll({
+      where: { courseId: { [Op.in]: courseIds } },
+      attributes: ["courseId", [fn("COUNT", col("id")), "count"]],
+      group: ["courseId"],
+      raw: true,
+    });
 
     const countsByCourse = enrollmentAgg.reduce((acc, item) => {
-      acc[String(item._id)] = item.count;
+      acc[String(item.courseId)] = parseInt(item.count, 10);
       return acc;
     }, {});
 
     let totalRevenue = 0;
     for (const course of courses) {
-      const cnt = countsByCourse[String(course._id)] || 0;
-      const price = typeof course.price === "number" ? course.price : 0;
+      const cnt = countsByCourse[String(course.id)] || 0;
+      const price = typeof course.price === "number" ? course.price : parseFloat(course.price || 0);
       totalRevenue += price * cnt;
     }
 

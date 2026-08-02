@@ -1,80 +1,78 @@
-import mongoose from "mongoose";
+import { DataTypes } from "sequelize";
+import { sequelize } from "../config/database.js";
 
-const paymentSchema = mongoose.Schema(
+const Payment = sequelize.define(
+  "Payment",
   {
-    user: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
-      required: true,
+    id: {
+      type: DataTypes.INTEGER,
+      primaryKey: true,
+      autoIncrement: true,
     },
-    courses: [
-      {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: "Course",
-        required: true,
+    _id: {
+      type: DataTypes.VIRTUAL,
+      get() {
+        return this.id;
       },
-    ],
+    },
     amount: {
-      type: Number,
-      required: true,
+      type: DataTypes.DECIMAL(10, 2),
+      allowNull: false,
     },
     currency: {
-      type: String,
-      default: "inr",
+      type: DataTypes.STRING,
+      defaultValue: "inr",
     },
     stripeSessionId: {
-      type: String,
+      type: DataTypes.STRING,
       unique: true,
-      sparse: true,
+      allowNull: true,
     },
     stripePaymentIntentId: {
-      type: String,
+      type: DataTypes.STRING,
       unique: true,
-      sparse: true,
+      allowNull: true,
     },
     status: {
-      type: String,
-      enum: ["pending", "completed", "failed", "refunded"],
-      default: "pending",
+      type: DataTypes.ENUM("pending", "completed", "failed", "refunded"),
+      defaultValue: "pending",
     },
     paymentMethod: {
-      type: String,
-      enum: ["card", "upi", "netbanking", "wallet"],
+      type: DataTypes.ENUM("card", "upi", "netbanking", "wallet"),
+      allowNull: true,
     },
     failureReason: {
-      type: String,
+      type: DataTypes.STRING,
+      allowNull: true,
     },
     refundAmount: {
-      type: Number,
-      default: 0,
+      type: DataTypes.DECIMAL(10, 2),
+      defaultValue: 0,
     },
     refundedAt: {
-      type: Date,
+      type: DataTypes.DATE,
+      allowNull: true,
     },
     metadata: {
-      type: Object,
-      default: {},
+      type: DataTypes.JSON,
+      defaultValue: {},
     },
     stripeEventIds: {
-      type: [String],
-      default: [],
+      type: DataTypes.JSON,
+      defaultValue: [],
     },
   },
-  { timestamps: true }
-);
-
-// Index for faster queries
-paymentSchema.index({ user: 1, createdAt: -1 });
-paymentSchema.index({ status: 1 });
-
-// Auto-delete pending payments after a fixed TTL (default: 1 hour)
-const ttlSeconds = parseInt(process.env.PAYMENT_TTL_SECONDS, 10) || 60 * 15;
-paymentSchema.index(
-  { createdAt: 1 },
   {
-    expireAfterSeconds: ttlSeconds,
-    partialFilterExpression: { status: "pending" },
+    timestamps: true,
+    indexes: [
+      {
+        fields: ["userId", "createdAt"],
+      },
+      {
+        fields: ["status"],
+      },
+    ],
   }
 );
 
-export default mongoose.model("Payment", paymentSchema);
+export default Payment;

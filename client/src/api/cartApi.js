@@ -15,10 +15,9 @@ export const removeFromCartApi = async ({ courseId }) => {
   return response.data;
 };
 
-export const createCheckoutSessionApi = async (products) => {
+export const createCheckoutSessionApi = async () => {
   const response = await axiosInstance.post(
-    `/payment/create-checkout-session`,
-    { products }
+    `/payment/create-checkout-session`
   );
   return response.data;
 };
